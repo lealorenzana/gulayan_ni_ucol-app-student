@@ -54,8 +54,10 @@ function Records() {
   }
   const handleAddRecord = async (formData) => {
     try {
-      //TODO: make add new record functional
+      await api.post('plants', formData);
       toast.success("New record saved.");
+      // Reload records to show the new entry
+      handleLoadRecords(1, false);
     } catch (error) {
       console.error(error);
       toast.error("Error encountered while saving record.");
