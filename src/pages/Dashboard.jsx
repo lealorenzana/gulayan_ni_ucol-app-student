@@ -1,28 +1,47 @@
 import { useEffect, useState } from "react";
-import { FaLeaf, FaUsers, FaBoxOpen, FaChartLine } from "react-icons/fa";
-import axios from "axios";
+import { FaLeaf, FaUsers } from "react-icons/fa";
+import { api } from "../api";
 
 function Dashboard() {
- 
   const [plants, setPlants] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const totalPlants = plants.length;
+  const estimatedCounts = plants.reduce(
+    (sum, plant) => sum + (Number(plant.estimated_count) || 0),
+    0,
+  );
+
   const stats = [
     {
       title: "Total Plants",
-      value: "156",
+      value: totalPlants.toString(),
       icon: FaLeaf,
       color: "bg-green-100 text-green-600",
     },
     {
       title: "Estimated Counts",
-      value: "1,234",
+      value: estimatedCounts.toLocaleString(),
       icon: FaUsers,
       color: "bg-blue-100 text-blue-600",
-    }
+    },
   ];
 
-
   useEffect(() => {
-    // TODO fetch plants data from server
+    const fetchPlants = async () => {
+      setIsLoading(true);
+      try {
+        const response = await api.get("plants");
+        const fetchedPlants = response.data?.data ?? response.data ?? [];
+        setPlants(Array.isArray(fetchedPlants) ? fetchedPlants : []);
+      } catch (error) {
+        console.error("Error fetching plants:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPlants();
   }, []);
 
   return (
@@ -75,29 +94,52 @@ function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {plants.map((plant) => (
-                <tr
-                  key={`plant-${plant.id}`}
-                  className="border-b border-gray-100 hover:bg-gray-50"
-                >
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {plant.name}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {plant.variety}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {plant.estimated_count}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800 font-medium">
-                    {new Date(plant.date_planted).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
+              {isLoading ? (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="py-8 text-center text-sm text-gray-500"
+                  >
+                    Loading plants...
                   </td>
                 </tr>
-              ))}
+              ) : plants.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="py-8 text-center text-sm text-gray-500"
+                  >
+                    No plants available.
+                  </td>
+                </tr>
+              ) : (
+                plants.map((plant) => (
+                  <tr
+                    key={`plant-${plant.id}`}
+                    className="border-b border-gray-100 hover:bg-gray-50"
+                  >
+                    <td className="py-3 px-4 text-sm text-gray-600">
+                      {plant.name}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-800">
+                      {plant.variety}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-600">
+                      {plant.estimated_count}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-800 font-medium">
+                      {new Date(plant.date_planted).toLocaleDateString(
+                        "en-US",
+                        {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        },
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
