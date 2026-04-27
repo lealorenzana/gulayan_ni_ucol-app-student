@@ -18,9 +18,34 @@ function Records() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const observerTarget = useRef(null);
   const isInInitialMount = useRef(true);
   const searchTimeoutRef = useRef(null);
+
+  // Helper function for API calls with retry logic
+  const apiCallWithRetry = async (apiCall, maxRetries = 2) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await apiCall();
+      } catch (error) {
+        console.warn(`API call attempt ${attempt} failed:`, error.message);
+
+        if (attempt === maxRetries) {
+          throw error;
+        }
+
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      }
+    }
+  };
+
+  // Retry loading records
+  const retryLoadRecords = () => {
+    setLoadError(null);
+    handleLoadRecords(1, false);
+  };
 
   // Debounce search term
   useEffect(() => {
@@ -42,13 +67,37 @@ function Records() {
   const handleSearchPlants = async (query = '') => {
     try {
       setIsLoading(true);
-      const response = await api.get(`plants/search?q=${encodeURIComponent(query)}`);
-      const searchResults = response.data.data || response.data;
+      console.log(`Searching database for: "${query}"`);
+
+      const response = await apiCallWithRetry(() => api.get(`plants/search?q=${encodeURIComponent(query)}`));
+
+      // Handle different possible response structures
+      let searchResults = [];
+      if (response.data) {
+        if (response.data.data && Array.isArray(response.data.data)) {
+          searchResults = response.data.data;
+        } else if (Array.isArray(response.data)) {
+          searchResults = response.data;
+        } else if (response.data.records && Array.isArray(response.data.records)) {
+          searchResults = response.data.records;
+        } else {
+          console.warn('Unexpected search API response structure:', response.data);
+          searchResults = [];
+        }
+      }
+
+      console.log(`Found ${searchResults.length} records matching search query`);
       setRecords(searchResults);
       setHasMore(false); // Disable pagination during search
+
+      // Clear any previous errors on successful search
+      setLoadError(null);
+
     } catch (error) {
-      console.error('Error searching records:', error);
-      toast.error('Failed to search records');
+      console.error('Error searching records in database:', error);
+      toast.error('Failed to search records in database');
+      setRecords([]); // Clear records on search error
+      setHasMore(false);
     } finally {
       setIsLoading(false);
     }
@@ -61,8 +110,32 @@ function Records() {
         setIsLoading(true);
       }
 
-      const response = await api.get(`plants?page=${page}`);
-      const newRecords = response.data.data || response.data; // assuming data is in data.data or data
+      console.log(`Loading records from database - Page ${page}, Append: ${append}`);
+      const response = await apiCallWithRetry(() => api.get(`plants?page=${page}`));
+
+      // Handle different possible response structures
+      let newRecords = [];
+      let paginationInfo = null;
+
+      if (response.data) {
+        // Try different common response structures
+        if (response.data.data && Array.isArray(response.data.data)) {
+          newRecords = response.data.data;
+          paginationInfo = response.data;
+        } else if (Array.isArray(response.data)) {
+          newRecords = response.data;
+          paginationInfo = { current_page: page, last_page: 1 };
+        } else if (response.data.records && Array.isArray(response.data.records)) {
+          newRecords = response.data.records;
+          paginationInfo = response.data;
+        } else {
+          console.warn('Unexpected API response structure:', response.data);
+          newRecords = [];
+          paginationInfo = { current_page: page, last_page: 1 };
+        }
+      }
+
+      console.log(`Loaded ${newRecords.length} records from database`);
 
       if (append) {
         setRecords(prev => [...prev, ...newRecords]);
@@ -70,13 +143,33 @@ function Records() {
         setRecords(newRecords);
       }
 
-      // Assuming response has pagination info, like current_page, last_page
-      const pagination = response.data.pagination || response.data;
-      setHasMore(page < (pagination.last_page || 1));
+      // Clear any previous errors on successful load
+      setLoadError(null);
+
+      // Determine if there are more pages
+      if (paginationInfo) {
+        const totalPages = paginationInfo.last_page || paginationInfo.total_pages || 1;
+        const hasNextPage = page < totalPages;
+        setHasMore(hasNextPage);
+        console.log(`Pagination: Page ${page}/${totalPages}, Has more: ${hasNextPage}`);
+      } else {
+        setHasMore(false);
+      }
 
     } catch (error) {
-      console.error('Error loading records:', error);
-      toast.error('Failed to load records');
+      console.error('Error loading records from database:', error);
+      setLoadError('Failed to load records from database. Please check your connection and try again.');
+      toast.error('Failed to load records from database');
+
+      // Reset loading states on error
+      setIsLoading(false);
+      setIsLoadingMore(false);
+
+      // If this is the initial load and it fails, set empty records
+      if (!append) {
+        setRecords([]);
+        setHasMore(false);
+      }
     } finally {
       setIsLoading(false);
       setIsLoadingMore(false);
@@ -298,6 +391,19 @@ function Records() {
         {!hasMore && records.length > 0 && !debouncedSearchTerm && (
           <div className="text-center py-4 text-gray-400 text-sm border-t border-gray-100">
             No more records to load
+          </div>
+        )}
+
+        {/* Error Display */}
+        {loadError && records.length === 0 && !isLoading && (
+          <div className="text-center py-8 px-4">
+            <div className="text-red-600 mb-4">{loadError}</div>
+            <button
+              onClick={retryLoadRecords}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry Loading
+            </button>
           </div>
         )}
       </div>
