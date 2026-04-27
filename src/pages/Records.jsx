@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 function Records() {
   const [records, setRecords] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [dataToUpdate, setDataToUpdate] = useState(null);
   const [isEditRecord, setIsEditRecord] = useState(false);
@@ -19,9 +20,38 @@ function Records() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const observerTarget = useRef(null);
   const isInInitialMount = useRef(true);
+  const searchTimeoutRef = useRef(null);
 
-  const handleSearchPlants = async () => {
-    // TODO search from the the backend; in case that all records is not yet loaded
+  // Debounce search term
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // 300ms delay
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchTerm]);
+
+  const handleSearchPlants = async (query = '') => {
+    try {
+      setIsLoading(true);
+      const response = await api.get(`plants/search?q=${encodeURIComponent(query)}`);
+      const searchResults = response.data.data || response.data;
+      setRecords(searchResults);
+      setHasMore(false); // Disable pagination during search
+    } catch (error) {
+      console.error('Error searching records:', error);
+      toast.error('Failed to search records');
+    } finally {
+      setIsLoading(false);
+    }
   }
   const handleLoadRecords = async (page = 1, append = false) => {
     try {
@@ -91,18 +121,14 @@ function Records() {
       toast.error("Error encountered while deleting record.");
     }
   }
-  const filteredRecords = records.filter(record =>
-    record.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.variety?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.seedling_source?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const displayRecords = records;
   const loadMore = useCallback(() => {
-    if (!isLoadingMore && hasMore && !searchTerm) {
+    if (!isLoadingMore && hasMore && !debouncedSearchTerm) {
       const nextPage = currentPage + 1;
       setCurrentPage(nextPage);
       handleLoadRecords(nextPage, true);
     }
-  }, [isLoadingMore, hasMore, currentPage, searchTerm]);
+  }, [isLoadingMore, hasMore, currentPage, debouncedSearchTerm]);
 
   // initial record loading
   useEffect(() => {
@@ -138,15 +164,16 @@ function Records() {
       isInInitialMount.current = false;
       return;
     }
-    if (searchTerm) {
+    if (debouncedSearchTerm) {
       setCurrentPage(1);
       setHasMore(false);
+      handleSearchPlants(debouncedSearchTerm);
     } else {
       setCurrentPage(1);
       setHasMore(true);
       handleLoadRecords(1, false);
     }
-  }, [searchTerm]);
+  }, [debouncedSearchTerm]);
 
   return (
     <div>
@@ -206,7 +233,7 @@ function Records() {
                     </tr>
                   ) : (
                     <>
-                      {filteredRecords.map((record) => (
+                      {displayRecords.map((record) => (
                         <tr key={record.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-4 px-6 text-sm text-gray-800 font-medium">{record.name}</td>
                           <td className="py-4 px-6 text-sm text-gray-600">{record?.variety || "-"}</td>
@@ -245,7 +272,7 @@ function Records() {
                       }
                       {/* intersection observer target */}
                       {
-                        !searchTerm && hasMore && !isLoadingMore && (
+                        !debouncedSearchTerm && hasMore && !isLoadingMore && (
                           <tr ref={observerTarget}>
                             <td colSpan={8} className='py-4 text-center text-gray-400 text-sm'>
                               Scroll for more...
@@ -261,14 +288,14 @@ function Records() {
           </table>
         </div>
 
-        {searchTerm && filteredRecords.length === 0 && (
+        {debouncedSearchTerm && displayRecords.length === 0 && (
           <div className="text-center py-8 text-gray-500">
             No records found matching your search.
           </div>
         )}
 
         {/* End of Records Indicator */}
-        {!hasMore && records.length > 0 && !searchTerm && (
+        {!hasMore && records.length > 0 && !debouncedSearchTerm && (
           <div className="text-center py-4 text-gray-400 text-sm border-t border-gray-100">
             No more records to load
           </div>
