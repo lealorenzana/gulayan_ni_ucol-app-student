@@ -24,6 +24,30 @@ function Login() {
     setIsLoading(true);
     try {
       //TODO make the login process functional
+      const response = await api.post("/login", {
+        email: formData.email,
+        password: formData.password,
+        remember: formData.rememberMe,
+      });
+      
+      //Example: Laravel Sanctum / JWT
+      //Adjust based on your backend response
+      const token = response.data.access_token;
+
+      //Save token
+      localStorage.setItem("token", token);
+
+      //Redirect after login
+      navigate("/dashboard");
+
+    } catch (error) {
+      console.error("Login failed:", error);
+
+      // Optional: show error message
+      alert(
+        error.response?.data?.message || "Invalid email or password"
+      );
+
     } finally {
       setIsLoading(false);
     }
