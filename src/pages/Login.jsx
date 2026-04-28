@@ -21,31 +21,38 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (isLoading) return;
     setIsLoading(true);
+
     try {
-      //TODO make the login process functional
       const response = await api.post("/login", {
         email: formData.email,
         password: formData.password,
         remember: formData.rememberMe,
       });
-      
-      //Example: Laravel Sanctum / JWT
-      //Adjust based on your backend response
-      const token = response.data.access_token;
 
-      //Save token
+      // Handle different backend responses
+      const token =
+        response.data.access_token ||
+        response.data.token ||
+        response.data.data?.token;
+
+      if (!token) {
+        throw new Error("No token returned from server");
+      }
+
+      // ✅ Save token (interceptor will use this automatically)
       localStorage.setItem("token", token);
 
-      //Redirect after login
+      // ✅ Redirect
       navigate("/dashboard");
 
     } catch (error) {
       console.error("Login failed:", error);
 
-      // Optional: show error message
       alert(
-        error.response?.data?.message || "Invalid email or password"
+        error.message || "Invalid email or password"
       );
 
     } finally {
