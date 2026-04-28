@@ -181,14 +181,21 @@ function Login() {
           {/* Sign Up Link */}
           <p className="mt-6 text-center text-sm text-gray-600">
             Don't have an account?{" "}
+            {/* ui: disable sign up link while logging in */}
             <button
               type="button"
-              onClick={() => navigate("/signup")}
+              onClick={() => {
+                if (!isLoading) navigate("/signup");
+              }}
               disabled={isLoading}
-              className="cursor-pointer text-green-600 hover:text-green-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Sign up for free
-            </button>
+              className={`font-semibold transition
+                ${isLoading
+                  ? "text-gray-400 cursor-not-allowed pointer-events-none"
+                  : "text-green-600 hover:text-green-700 cursor-pointer"
+                }`}
+>
+  Sign up for free
+</button>
           </p>
         </div>
 
