@@ -28,6 +28,7 @@ function Dashboard() {
   ];
 
   useEffect(() => {
+        // TODO fetch plants data from server
     const fetchPlants = async () => {
       setIsLoading(true);
       try {
