@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { FaTimes } from 'react-icons/fa'
+import { toast } from 'sonner'
 import InputPriceField from '../../components/InputPriceField'
 
 const defaultFormData = {
@@ -56,15 +57,7 @@ function ModalNewRecord({ isOpen, onClose, onSubmit }) {
   const handleSubmit = (e) => {
     e.preventDefault()
 
-    const requiredFields = [
-      'name',
-      'variety',
-      'batch_name',
-      'seedling_count',
-      'supplier',
-      'starting_fund',
-      'date_planted'
-    ]
+    const requiredFields = ['name', 'date_planted']
 
     const isValid = requiredFields.every((field) => {
       const value = formData[field]
@@ -72,6 +65,7 @@ function ModalNewRecord({ isOpen, onClose, onSubmit }) {
     })
 
     if (!isValid) {
+      toast.error('Please fill in all required fields')
       return
     }
 
@@ -101,7 +95,7 @@ function ModalNewRecord({ isOpen, onClose, onSubmit }) {
             type="button"
             className="text-gray-500 hover:text-gray-700 p-2 rounded-full"
             onClick={handleClose}
-            aria-label=""
+            aria-label="Close modal"
             title="Close modal"
           >
             <FaTimes />
@@ -169,7 +163,8 @@ function ModalNewRecord({ isOpen, onClose, onSubmit }) {
             <input
               id="seedling_count"
               name="seedling_count"
-              type="text"
+              type="number"
+              min="0"
               value={formData.seedling_count}
               onChange={handleChange}
               placeholder="e.g. 120"
