@@ -20,6 +20,7 @@ function Records() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const observerTarget = useRef(null);
   const isInInitialMount = useRef(true);
 
@@ -104,16 +105,22 @@ function Records() {
     }
   }
   const handleDeleteRecord = async (data) => {
+    const isDelete = confirm("Are you sure you want to delete this record?");
+    if (!isDelete) {
+      return;
+    }
+
+    setDeletingId(data.id);
+
     try {
-      const isDelete = confirm("Are you sure you want to delete this record?");
-      if (isDelete) {
-        await api.delete(`plants/${data.id}`, data);
-        setRecords(prev => prev?.filter( val => data.id !== val.id))
-        toast.success("Plant data deleted.");
-      }
+      await api.delete(`plants/${data.id}`);
+      setRecords((prev) => prev?.filter((val) => data.id !== val.id));
+      toast.success("Plant data deleted.");
     } catch (error) {
-      console.error(error)
+      console.error(error);
       toast.error("Error encountered while deleting record.");
+    } finally {
+      setDeletingId(null);
     }
   }
   const filteredRecords = records.filter(record =>
@@ -245,10 +252,13 @@ function Records() {
                                 onClick={() => { setDataToUpdate(record); setIsEditRecord(true) }}>
                                 <FaEdit />
                               </button>
-                              <button className="cursor-pointer text-red-600 hover:text-red-700 p-2 
-                                hover:bg-red-50 rounded"
+                              <button
+                                type="button"
+                                className="cursor-pointer text-red-600 hover:text-red-700 p-2 hover:bg-red-50 rounded"
                                 onClick={() => { handleDeleteRecord(record) }}
-                                title="Delete Record">
+                                title="Delete Record"
+                                disabled={deletingId === record.id}
+                              >
                                 <FaTrash />
                               </button>
                             </div>
