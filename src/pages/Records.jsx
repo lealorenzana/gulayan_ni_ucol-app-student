@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FaSearch, FaPlus, FaEdit, FaTrash } from 'react-icons/fa';
 import ModalNewRecord from './records/ModalNewRecord';
 import ModalEditRecord from './records/ModalEditRecord';
@@ -18,22 +18,17 @@ function Records() {
   const [isLoading, setIsLoading] = useState(false);
   //pagination states
   const [currentPage, setCurrentPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
-  const observerTarget = useRef(null);
   const isInInitialMount = useRef(true);
 
   const handleSearchPlants = async () => {
     // TODO search from the the backend; in case that all records is not yet loaded
   }
-  const handleLoadRecords = async (page = 1, append = false) => {
+  const handleLoadRecords = async (page = 1) => {
     try {
-      if (append) {
-        setIsLoadingMore(true);
-      } else {
-        setIsLoading(true);
-      }
+      setIsLoading(true);
 
       const response = await api.get('plants', {
         params: {
@@ -44,26 +39,21 @@ function Records() {
 
       const payload = response.data || {};
       const newRecords = payload.data || payload.records || [];
-
-      if (append) {
-        setRecords((prev) => [...prev, ...newRecords]);
-      } else {
-        setRecords(newRecords);
-      }
+      setRecords(newRecords);
 
       const pagination = payload.meta || payload.pagination || payload || {};
       const currentPageFromApi = pagination.current_page || pagination.page || page;
-      const lastPage = pagination.last_page || pagination.lastPage || pagination.total_pages || null;
-      const hasNextPage = lastPage ? currentPageFromApi < lastPage : newRecords.length === PAGE_SIZE;
+      const lastPageFromApi = pagination.last_page || pagination.lastPage || pagination.total_pages || page;
+      const hasNextPage = currentPageFromApi < lastPageFromApi;
 
       setCurrentPage(currentPageFromApi);
+      setLastPage(lastPageFromApi);
       setHasMore(hasNextPage);
     } catch (error) {
       console.error('Error loading records:', error);
       toast.error('Failed to load records');
     } finally {
       setIsLoading(false);
-      setIsLoadingMore(false);
     }
   }
   const handleAddRecord = async (formData) => {
@@ -128,40 +118,16 @@ function Records() {
     record.variety?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     record.seedling_source?.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  const loadMore = useCallback(() => {
-    if (!isLoadingMore && hasMore && !searchTerm) {
-      handleLoadRecords(currentPage + 1, true);
-    }
-  }, [isLoadingMore, hasMore, currentPage, searchTerm]);
+
+  const handlePageChange = (page) => {
+    if (page < 1 || page > lastPage || page === currentPage) return
+    handleLoadRecords(page)
+  }
 
   // initial record loading
   useEffect(() => {
-    handleLoadRecords(1, false);
+    handleLoadRecords(1)
   }, []);
-  // intersection observer for infine scroll
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMore();
-        }
-      }, { threshold: 0.1 }
-    );
-
-    const currentTarget = observerTarget.current;
-
-    if (currentTarget) {
-      observer.observe(currentTarget);
-    } else {
-      console.log("No target to observer.");
-    }
-
-    return () => {
-      if (currentTarget) {
-        observer.unobserve(currentTarget);
-      }
-    }
-  }, [loadMore]);
   // reset pagination when searching
   useEffect(() => {
     if (isInInitialMount.current) {
@@ -174,7 +140,7 @@ function Records() {
     } else {
       setCurrentPage(1);
       setHasMore(true);
-      handleLoadRecords(1, false);
+      handleLoadRecords(1);
     }
   }, [searchTerm]);
 
@@ -266,34 +232,6 @@ function Records() {
                         </tr>
                       ))}
 
-                      {/* loading more indicator */}
-                      {
-                        isLoadingMore && (
-                          <tr>
-                            <td colSpan={8} className='py-6'>
-                              <PlantLoading size='lg' variant='pulse' text="Loading more records..." />
-                            </td>
-                          </tr>
-                        )
-                      }
-                      {
-                        !searchTerm && hasMore && !isLoadingMore && (
-                          <tr ref={observerTarget}>
-                            <td colSpan={8} className='py-4 text-center text-gray-400 text-sm'>
-                              <div className='flex flex-col items-center gap-2'>
-                                <span>Scroll for more</span>
-                                <button
-                                  type='button'
-                                  onClick={loadMore}
-                                  className='text-green-700 border border-green-200 bg-green-50 px-4 py-2 rounded-lg hover:bg-green-100 transition'
-                                >
-                                  Load more records
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      }
 
                     </>
                   )
@@ -301,6 +239,32 @@ function Records() {
             </tbody>
           </table>
         </div>
+
+        {!searchTerm && (
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between px-6 py-4 border-t border-gray-100 bg-gray-50">
+            <p className="text-sm text-gray-600">
+              Page {currentPage} of {lastPage}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={currentPage === 1 || isLoading}
+                onClick={() => handlePageChange(currentPage - 1)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={!hasMore || isLoading}
+                onClick={() => handlePageChange(currentPage + 1)}
+                className="rounded-lg border border-green-600 bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
 
         {searchTerm && filteredRecords.length === 0 && (
           <div className="text-center py-8 text-gray-500">
