@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FaTimes } from 'react-icons/fa'
+import { toast } from 'sonner'
 import InputPriceField from '../../components/InputPriceField'
 
 const defaultFormData = {
@@ -45,6 +46,19 @@ function ModalEditRecord({ isOpen, onClose, onSubmit, data }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
+
+    const requiredFields = ['name', 'date_planted']
+
+    const isValid = requiredFields.every((field) => {
+      const value = formData[field]
+      return typeof value === 'string' ? value.trim().length > 0 : Boolean(value)
+    })
+
+    if (!isValid) {
+      toast.error('Please fill in all required fields')
+      return
+    }
+
     const payload = {
       ...formData,
       seedling_source: formData.seedling_source || formData.supplier || ''
@@ -89,6 +103,7 @@ function ModalEditRecord({ isOpen, onClose, onSubmit, data }) {
             type="button"
             className="text-gray-500 hover:text-gray-700 p-2 rounded-full"
             onClick={handleClose}
+            aria-label="Close modal"
             title="Close modal"
           >
             <FaTimes />
@@ -109,7 +124,7 @@ function ModalEditRecord({ isOpen, onClose, onSubmit, data }) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="variety" className="font-medium">Variety <span className="text-red-500">*</span></label>
+            <label htmlFor="variety" className="font-medium">Variety</label>
             <select
               id="variety"
               name="variety"
@@ -137,7 +152,7 @@ function ModalEditRecord({ isOpen, onClose, onSubmit, data }) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="batch_name" className="font-medium">Batch Name <span className="text-red-500">*</span></label>
+            <label htmlFor="batch_name" className="font-medium">Batch Name</label>
             <input
               id="batch_name"
               name="batch_name"
@@ -149,11 +164,12 @@ function ModalEditRecord({ isOpen, onClose, onSubmit, data }) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="seedling_count" className="font-medium">Seedling Count <span className="text-red-500">*</span></label>
+            <label htmlFor="seedling_count" className="font-medium">Seedling Count</label>
             <input
               id="seedling_count"
               name="seedling_count"
-              type="text"
+              type="number"
+              min="0"
               value={formData.seedling_count}
               onChange={handleChange}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
@@ -161,7 +177,7 @@ function ModalEditRecord({ isOpen, onClose, onSubmit, data }) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="seedling_source" className="font-medium">Seedling Source <span className="text-red-500">*</span></label>
+            <label htmlFor="seedling_source" className="font-medium">Seedling Source</label>
             <input
               id="seedling_source"
               name="seedling_source"
@@ -173,7 +189,7 @@ function ModalEditRecord({ isOpen, onClose, onSubmit, data }) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="starting_fund" className="font-medium">Starting Fund <span className="text-red-500">*</span></label>
+            <label htmlFor="starting_fund" className="font-medium">Starting Fund</label>
             <InputPriceField
               id="starting_fund"
               name="starting_fund"
