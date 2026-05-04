@@ -6,6 +6,8 @@ import PlantLoading from '../components/PlantLoading';
 import { api } from '../api';
 import { toast } from 'sonner';
 
+const PAGE_SIZE = 12;
+
 function Records() {
   //TODO: add loading icon while ongoing ang loading ng records.
   const [records, setRecords] = useState([]);
@@ -32,19 +34,29 @@ function Records() {
         setIsLoading(true);
       }
 
-      const response = await api.get(`plants?page=${page}`);
-      const newRecords = response.data.data || response.data; // assuming data is in data.data or data
+      const response = await api.get('plants', {
+        params: {
+          page,
+          per_page: PAGE_SIZE,
+        },
+      });
+
+      const payload = response.data || {};
+      const newRecords = payload.data || payload.records || [];
 
       if (append) {
-        setRecords(prev => [...prev, ...newRecords]);
+        setRecords((prev) => [...prev, ...newRecords]);
       } else {
         setRecords(newRecords);
       }
 
-      // Assuming response has pagination info, like current_page, last_page
-      const pagination = response.data.pagination || response.data;
-      setHasMore(page < (pagination.last_page || 1));
+      const pagination = payload.meta || payload.pagination || payload || {};
+      const currentPageFromApi = pagination.current_page || pagination.page || page;
+      const lastPage = pagination.last_page || pagination.lastPage || pagination.total_pages || null;
+      const hasNextPage = lastPage ? currentPageFromApi < lastPage : newRecords.length === PAGE_SIZE;
 
+      setCurrentPage(currentPageFromApi);
+      setHasMore(hasNextPage);
     } catch (error) {
       console.error('Error loading records:', error);
       toast.error('Failed to load records');
@@ -95,9 +107,7 @@ function Records() {
   );
   const loadMore = useCallback(() => {
     if (!isLoadingMore && hasMore && !searchTerm) {
-      const nextPage = currentPage + 1;
-      setCurrentPage(nextPage);
-      handleLoadRecords(nextPage, true);
+      handleLoadRecords(currentPage + 1, true);
     }
   }, [isLoadingMore, hasMore, currentPage, searchTerm]);
 
@@ -197,7 +207,7 @@ function Records() {
                 isLoading && records.length === 0 ?
                   (
                     <tr>
-                      <td colSpan={7} className='py-10'>
+                      <td colSpan={8} className='py-10'>
                         <PlantLoading size='2xl' variant='pulse' text="Loading records" />
                       </td>
                     </tr>
@@ -240,12 +250,20 @@ function Records() {
                           </tr>
                         )
                       }
-                      {/* intersection observer target */}
                       {
                         !searchTerm && hasMore && !isLoadingMore && (
                           <tr ref={observerTarget}>
                             <td colSpan={8} className='py-4 text-center text-gray-400 text-sm'>
-                              Scroll for more...
+                              <div className='flex flex-col items-center gap-2'>
+                                <span>Scroll for more</span>
+                                <button
+                                  type='button'
+                                  onClick={loadMore}
+                                  className='text-green-700 border border-green-200 bg-green-50 px-4 py-2 rounded-lg hover:bg-green-100 transition'
+                                >
+                                  Load more records
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         )
