@@ -42,10 +42,10 @@ function Login() {
         throw new Error("No token returned from server");
       }
 
-      // ✅ Save token (interceptor will use this automatically)
+      // Save token (interceptor will use this automatically)
       localStorage.setItem("token", token);
 
-      // ✅ Redirect
+      // Redirect
       navigate("/dashboard");
 
     } catch (error) {
