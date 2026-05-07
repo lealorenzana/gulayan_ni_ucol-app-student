@@ -20,15 +20,17 @@ function Records() {
   const [currentPage, setCurrentPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const isInInitialMount = useRef(true);
 
   const handleSearchPlants = async () => {
     // TODO search from the the backend; in case that all records is not yet loaded
   }
-  const handleLoadRecords = async (page = 1) => {
+  const handleLoadRecords = async (page = 1, append = false) => {
     try {
       setIsLoading(true);
+      if (append) setIsLoadingMore(true);
 
       const response = await api.get('plants', {
         params: {
@@ -37,23 +39,18 @@ function Records() {
         },
       });
 
-      const payload = response.data || {};
-      const newRecords = payload.data || payload.records || [];
-      setRecords(newRecords);
-
-      const pagination = payload.meta || payload.pagination || payload || {};
-      const currentPageFromApi = pagination.current_page || pagination.page || page;
-      const lastPageFromApi = pagination.last_page || pagination.lastPage || pagination.total_pages || page;
-      const hasNextPage = currentPageFromApi < lastPageFromApi;
-
-      setCurrentPage(currentPageFromApi);
-      setLastPage(lastPageFromApi);
-      setHasMore(hasNextPage);
+      const { data, pagination } = response.data;
+      
+      setRecords(append ? (prev) => [...prev, ...data] : data);
+      setCurrentPage(pagination.current_page);
+      setLastPage(pagination.last_page);
+      setHasMore(pagination.current_page < pagination.last_page);
     } catch (error) {
       console.error('Error loading records:', error);
       toast.error('Failed to load records');
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }
   const handleAddRecord = async (formData) => {
