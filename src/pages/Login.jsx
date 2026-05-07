@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { api } from "../api";
 
 function Login() {
@@ -49,13 +50,13 @@ function Login() {
       navigate("/dashboard");
     } catch (error) {
       console.error("Login failed:", error);
-
-      alert(error.message || "Invalid email or password");
+      const errorMessage = error.message || "Invalid email or password";
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   return (
     <div className="min-h-screen bg-green-50 flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
@@ -159,6 +160,25 @@ function Login() {
                                  outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="••••••••"
               />
+            </div>
+
+            {/* Remember Me Checkbox */}
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="rememberMe"
+                name="rememberMe"
+                checked={formData.rememberMe}
+                onChange={handleChange}
+                disabled={isLoading}
+                className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-2 focus:ring-green-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <label
+                htmlFor="rememberMe"
+                className="ml-2 text-sm text-gray-600 cursor-pointer disabled:opacity-50"
+              >
+                Remember me
+              </label>
             </div>
 
             {/* Submit Button */}
