@@ -47,14 +47,10 @@ function Login() {
 
       // Redirect
       navigate("/dashboard");
-
     } catch (error) {
       console.error("Login failed:", error);
 
-      alert(
-        error.message || "Invalid email or password"
-      );
-
+      alert(error.message || "Invalid email or password");
     } finally {
       setIsLoading(false);
     }
@@ -88,7 +84,36 @@ function Login() {
         </div>
 
         {/* Login Form Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-8 border border-green-100">
+        <div className="bg-white rounded-2xl shadow-xl p-8 border border-green-100 relative">
+          {isLoading && (
+            <div className="absolute inset-0 bg-white bg-opacity-75 rounded-2xl flex items-center justify-center z-10">
+              <div className="flex flex-col items-center gap-3">
+                <svg
+                  className="h-8 w-8 animate-spin text-green-600"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    strokeWidth="4"
+                    className="opacity-25"
+                  />
+                  <path
+                    d="M4 12a8 8 0 018-8"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    className="opacity-75"
+                  />
+                </svg>
+                <p className="text-sm text-gray-600 font-medium">
+                  Signing you in...
+                </p>
+              </div>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Field */}
             <div>
@@ -196,13 +221,14 @@ function Login() {
               }}
               disabled={isLoading}
               className={`font-semibold transition
-                ${isLoading
-                  ? "text-gray-400 cursor-not-allowed pointer-events-none"
-                  : "text-green-600 hover:text-green-700 cursor-pointer"
+                ${
+                  isLoading
+                    ? "text-gray-400 cursor-not-allowed pointer-events-none"
+                    : "text-green-600 hover:text-green-700 cursor-pointer"
                 }`}
->
-  Sign up for free
-</button>
+            >
+              Sign up for free
+            </button>
           </p>
         </div>
 
