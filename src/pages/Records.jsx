@@ -7,9 +7,9 @@ import { api } from '../api';
 import { toast } from 'sonner';
 
 function Records() {
-  //TODO: add loading icon while ongoing ang loading ng records.
   const [records, setRecords] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [dataToUpdate, setDataToUpdate] = useState(null);
   const [isEditRecord, setIsEditRecord] = useState(false);
@@ -18,11 +18,89 @@ function Records() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const observerTarget = useRef(null);
   const isInInitialMount = useRef(true);
+  const searchTimeoutRef = useRef(null);
 
-  const handleSearchPlants = async () => {
-    // TODO search from the the backend; in case that all records is not yet loaded
+  // Helper function for API calls with retry logic
+  const apiCallWithRetry = async (apiCall, maxRetries = 2) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await apiCall();
+      } catch (error) {
+        console.warn(`API call attempt ${attempt} failed:`, error.message);
+
+        if (attempt === maxRetries) {
+          throw error;
+        }
+
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      }
+    }
+  };
+
+  // Retry loading records
+  const retryLoadRecords = () => {
+    setLoadError(null);
+    handleLoadRecords(1, false);
+  };
+
+  // Debounce search term
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // 300ms delay
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchTerm]);
+
+  const handleSearchPlants = async (query = '') => {
+    try {
+      setIsLoading(true);
+      console.log(`Searching database for: "${query}"`);
+
+      const response = await apiCallWithRetry(() => api.get(`plants/search?q=${encodeURIComponent(query)}`));
+
+      // Handle different possible response structures
+      let searchResults = [];
+      if (response.data) {
+        if (response.data.data && Array.isArray(response.data.data)) {
+          searchResults = response.data.data;
+        } else if (Array.isArray(response.data)) {
+          searchResults = response.data;
+        } else if (response.data.records && Array.isArray(response.data.records)) {
+          searchResults = response.data.records;
+        } else {
+          console.warn('Unexpected search API response structure:', response.data);
+          searchResults = [];
+        }
+      }
+
+      console.log(`Found ${searchResults.length} records matching search query`);
+      setRecords(searchResults);
+      setHasMore(false); // Disable pagination during search
+
+      // Clear any previous errors on successful search
+      setLoadError(null);
+
+    } catch (error) {
+      console.error('Error searching records in database:', error);
+      toast.error('Failed to search records in database');
+      setRecords([]); // Clear records on search error
+      setHasMore(false);
+    } finally {
+      setIsLoading(false);
+    }
   }
   const handleLoadRecords = async (page = 1, append = false) => {
     try {
@@ -32,8 +110,32 @@ function Records() {
         setIsLoading(true);
       }
 
-      const response = await api.get(`plants?page=${page}`);
-      const newRecords = response.data.data || response.data; // assuming data is in data.data or data
+      console.log(`Loading records from database - Page ${page}, Append: ${append}`);
+      const response = await apiCallWithRetry(() => api.get(`plants?page=${page}`));
+
+      // Handle different possible response structures
+      let newRecords = [];
+      let paginationInfo = null;
+
+      if (response.data) {
+        // Try different common response structures
+        if (response.data.data && Array.isArray(response.data.data)) {
+          newRecords = response.data.data;
+          paginationInfo = response.data;
+        } else if (Array.isArray(response.data)) {
+          newRecords = response.data;
+          paginationInfo = { current_page: page, last_page: 1 };
+        } else if (response.data.records && Array.isArray(response.data.records)) {
+          newRecords = response.data.records;
+          paginationInfo = response.data;
+        } else {
+          console.warn('Unexpected API response structure:', response.data);
+          newRecords = [];
+          paginationInfo = { current_page: page, last_page: 1 };
+        }
+      }
+
+      console.log(`Loaded ${newRecords.length} records from database`);
 
       if (append) {
         setRecords(prev => [...prev, ...newRecords]);
@@ -41,13 +143,33 @@ function Records() {
         setRecords(newRecords);
       }
 
-      // Assuming response has pagination info, like current_page, last_page
-      const pagination = response.data.pagination || response.data;
-      setHasMore(page < (pagination.last_page || 1));
+      // Clear any previous errors on successful load
+      setLoadError(null);
+
+      // Determine if there are more pages
+      if (paginationInfo) {
+        const totalPages = paginationInfo.last_page || paginationInfo.total_pages || 1;
+        const hasNextPage = page < totalPages;
+        setHasMore(hasNextPage);
+        console.log(`Pagination: Page ${page}/${totalPages}, Has more: ${hasNextPage}`);
+      } else {
+        setHasMore(false);
+      }
 
     } catch (error) {
-      console.error('Error loading records:', error);
-      toast.error('Failed to load records');
+      console.error('Error loading records from database:', error);
+      setLoadError('Failed to load records from database. Please check your connection and try again.');
+      toast.error('Failed to load records from database');
+
+      // Reset loading states on error
+      setIsLoading(false);
+      setIsLoadingMore(false);
+
+      // If this is the initial load and it fails, set empty records
+      if (!append) {
+        setRecords([]);
+        setHasMore(false);
+      }
     } finally {
       setIsLoading(false);
       setIsLoadingMore(false);
@@ -55,8 +177,10 @@ function Records() {
   }
   const handleAddRecord = async (formData) => {
     try {
-      //TODO: make add new record functional
+      await api.post('plants', formData);
       toast.success("New record saved.");
+      // Reload records to show the new entry
+      handleLoadRecords(1, false);
     } catch (error) {
       console.error(error);
       toast.error("Error encountered while saving record.");
@@ -66,8 +190,10 @@ function Records() {
   }
   const handleUpdateRecord = async (data) => {
     try {
-      //TODO make update record functional
+      await api.put(`plants/${data.id}`, data);
       toast.success("Plant data updated.");
+      // Reload records to show the updated entry
+      handleLoadRecords(1, false);
     } catch (error) {
       console.error(error);
       toast.error("Error encountered during update.");
@@ -88,18 +214,14 @@ function Records() {
       toast.error("Error encountered while deleting record.");
     }
   }
-  const filteredRecords = records.filter(record =>
-    record.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.variety?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.seedling_source?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const displayRecords = records;
   const loadMore = useCallback(() => {
-    if (!isLoadingMore && hasMore && !searchTerm) {
+    if (!isLoadingMore && hasMore && !debouncedSearchTerm) {
       const nextPage = currentPage + 1;
       setCurrentPage(nextPage);
       handleLoadRecords(nextPage, true);
     }
-  }, [isLoadingMore, hasMore, currentPage, searchTerm]);
+  }, [isLoadingMore, hasMore, currentPage, debouncedSearchTerm]);
 
   // initial record loading
   useEffect(() => {
@@ -135,15 +257,16 @@ function Records() {
       isInInitialMount.current = false;
       return;
     }
-    if (searchTerm) {
+    if (debouncedSearchTerm) {
       setCurrentPage(1);
       setHasMore(false);
+      handleSearchPlants(debouncedSearchTerm);
     } else {
       setCurrentPage(1);
       setHasMore(true);
       handleLoadRecords(1, false);
     }
-  }, [searchTerm]);
+  }, [debouncedSearchTerm]);
 
   return (
     <div>
@@ -197,13 +320,13 @@ function Records() {
                 isLoading && records.length === 0 ?
                   (
                     <tr>
-                      <td colSpan={7} className='py-10'>
+                      <td colSpan={8} className='py-10'>
                         <PlantLoading size='2xl' variant='pulse' text="Loading records" />
                       </td>
                     </tr>
                   ) : (
                     <>
-                      {filteredRecords.map((record) => (
+                      {displayRecords.map((record) => (
                         <tr key={record.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-4 px-6 text-sm text-gray-800 font-medium">{record.name}</td>
                           <td className="py-4 px-6 text-sm text-gray-600">{record?.variety || "-"}</td>
@@ -242,7 +365,7 @@ function Records() {
                       }
                       {/* intersection observer target */}
                       {
-                        !searchTerm && hasMore && !isLoadingMore && (
+                        !debouncedSearchTerm && hasMore && !isLoadingMore && (
                           <tr ref={observerTarget}>
                             <td colSpan={8} className='py-4 text-center text-gray-400 text-sm'>
                               Scroll for more...
@@ -258,16 +381,29 @@ function Records() {
           </table>
         </div>
 
-        {searchTerm && filteredRecords.length === 0 && (
+        {debouncedSearchTerm && displayRecords.length === 0 && (
           <div className="text-center py-8 text-gray-500">
             No records found matching your search.
           </div>
         )}
 
         {/* End of Records Indicator */}
-        {!hasMore && records.length > 0 && !searchTerm && (
+        {!hasMore && records.length > 0 && !debouncedSearchTerm && (
           <div className="text-center py-4 text-gray-400 text-sm border-t border-gray-100">
             No more records to load
+          </div>
+        )}
+
+        {/* Error Display */}
+        {loadError && records.length === 0 && !isLoading && (
+          <div className="text-center py-8 px-4">
+            <div className="text-red-600 mb-4">{loadError}</div>
+            <button
+              onClick={retryLoadRecords}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry Loading
+            </button>
           </div>
         )}
       </div>
