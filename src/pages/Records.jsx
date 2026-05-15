@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FaSearch, FaPlus, FaEdit, FaTrash } from 'react-icons/fa';
 import ModalNewRecord from './records/ModalNewRecord';
 import ModalEditRecord from './records/ModalEditRecord';
 import PlantLoading from '../components/PlantLoading';
 import { api } from '../api';
 import { toast } from 'sonner';
+
+const PAGE_SIZE = 12;
 
 function Records() {
   const [records, setRecords] = useState([]);
@@ -16,10 +18,10 @@ function Records() {
   const [isLoading, setIsLoading] = useState(false);
   //pagination states
   const [currentPage, setCurrentPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [loadError, setLoadError] = useState(null);
-  const observerTarget = useRef(null);
+  const [deletingId, setDeletingId] = useState(null);
   const isInInitialMount = useRef(true);
   const searchTimeoutRef = useRef(null);
 
@@ -104,58 +106,22 @@ function Records() {
   }
   const handleLoadRecords = async (page = 1, append = false) => {
     try {
-      if (append) {
-        setIsLoadingMore(true);
-      } else {
-        setIsLoading(true);
-      }
+      setIsLoading(true);
+      if (append) setIsLoadingMore(true);
 
-      console.log(`Loading records from database - Page ${page}, Append: ${append}`);
-      const response = await apiCallWithRetry(() => api.get(`plants?page=${page}`));
+      const response = await api.get('plants', {
+        params: {
+          page,
+          per_page: PAGE_SIZE,
+        },
+      });
 
-      // Handle different possible response structures
-      let newRecords = [];
-      let paginationInfo = null;
-
-      if (response.data) {
-        // Try different common response structures
-        if (response.data.data && Array.isArray(response.data.data)) {
-          newRecords = response.data.data;
-          paginationInfo = response.data;
-        } else if (Array.isArray(response.data)) {
-          newRecords = response.data;
-          paginationInfo = { current_page: page, last_page: 1 };
-        } else if (response.data.records && Array.isArray(response.data.records)) {
-          newRecords = response.data.records;
-          paginationInfo = response.data;
-        } else {
-          console.warn('Unexpected API response structure:', response.data);
-          newRecords = [];
-          paginationInfo = { current_page: page, last_page: 1 };
-        }
-      }
-
-      console.log(`Loaded ${newRecords.length} records from database`);
-
-      if (append) {
-        setRecords(prev => [...prev, ...newRecords]);
-      } else {
-        setRecords(newRecords);
-      }
-
-      // Clear any previous errors on successful load
-      setLoadError(null);
-
-      // Determine if there are more pages
-      if (paginationInfo) {
-        const totalPages = paginationInfo.last_page || paginationInfo.total_pages || 1;
-        const hasNextPage = page < totalPages;
-        setHasMore(hasNextPage);
-        console.log(`Pagination: Page ${page}/${totalPages}, Has more: ${hasNextPage}`);
-      } else {
-        setHasMore(false);
-      }
-
+      const { data, pagination } = response.data;
+      
+      setRecords(append ? (prev) => [...prev, ...data] : data);
+      setCurrentPage(pagination.current_page);
+      setLastPage(pagination.last_page);
+      setHasMore(pagination.current_page < pagination.last_page);
     } catch (error) {
       console.error('Error loading records from database:', error);
       setLoadError('Failed to load records from database. Please check your connection and try again.');
@@ -177,80 +143,76 @@ function Records() {
   }
   const handleAddRecord = async (formData) => {
     try {
-      await api.post('plants', formData);
-      toast.success("New record saved.");
-      // Reload records to show the new entry
-      handleLoadRecords(1, false);
-    } catch (error) {
-      console.error(error);
-      toast.error("Error encountered while saving record.");
-    }
+      const payload = {
+        ...formData,
+        seedling_source: formData.seedling_source || formData.supplier,
+      }
 
-    setIsModalOpen(false)
+      const response = await api.post('plants', payload)
+      const createdRecord = response.data?.data || response.data || payload
+
+      setRecords((prev) => [createdRecord, ...prev])
+      toast.success('New record saved.')
+      setIsModalOpen(false)
+    } catch (error) {
+      console.error(error)
+      toast.error('Error encountered while saving record.')
+    }
   }
   const handleUpdateRecord = async (data) => {
     try {
-      await api.put(`plants/${data.id}`, data);
-      toast.success("Plant data updated.");
-      // Reload records to show the updated entry
-      handleLoadRecords(1, false);
+      const payload = {
+        ...data,
+        seedling_source: data.seedling_source ?? data.supplier,
+      }
+
+      const response = await api.put(`plants/${data.id}`, payload)
+      const updatedRecord = response.data?.data || response.data || payload
+
+      setRecords((prev) => prev.map((record) => (
+        record.id === updatedRecord.id ? updatedRecord : record
+      )))
+      toast.success('Plant data updated.')
+      setIsEditRecord(false)
     } catch (error) {
-      console.error(error);
-      toast.error("Error encountered during update.");
-    } finally {
-      setIsEditRecord(false);
+      console.error(error)
+      toast.error('Error encountered during update.')
     }
   }
   const handleDeleteRecord = async (data) => {
+    const isDelete = confirm("Are you sure you want to delete this record?");
+    if (!isDelete) {
+      return;
+    }
+
+    setDeletingId(data.id);
+
     try {
-      const isDelete = confirm("Are you sure you want to delete this record?");
-      if (isDelete) {
-        await api.delete(`plants/${data.id}`, data);
-        setRecords(prev => prev?.filter( val => data.id !== val.id))
-        toast.success("Plant data deleted.");
-      }
+      await api.delete(`plants/${data.id}`);
+      setRecords((prev) => prev?.filter((val) => data.id !== val.id));
+      toast.success("Plant data deleted.");
     } catch (error) {
-      console.error(error)
+      console.error(error);
       toast.error("Error encountered while deleting record.");
+    } finally {
+      setDeletingId(null);
     }
   }
-  const displayRecords = records;
-  const loadMore = useCallback(() => {
-    if (!isLoadingMore && hasMore && !debouncedSearchTerm) {
-      const nextPage = currentPage + 1;
-      setCurrentPage(nextPage);
-      handleLoadRecords(nextPage, true);
-    }
-  }, [isLoadingMore, hasMore, currentPage, debouncedSearchTerm]);
+  const filteredRecords = records.filter(record =>
+    record.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    record.variety?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    record.seedling_source?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handlePageChange = (page) => {
+    if (page < 1 || page > lastPage || page === currentPage) return
+    handleLoadRecords(page)
+  }
 
   // initial record loading
   useEffect(() => {
-    handleLoadRecords(1, false);
+    handleLoadRecords(1)
   }, []);
-  // intersection observer for infine scroll
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMore();
-        }
-      }, { threshold: 0.1 }
-    );
-
-    const currentTarget = observerTarget.current;
-
-    if (currentTarget) {
-      observer.observe(currentTarget);
-    } else {
-      console.log("No target to observer.");
-    }
-
-    return () => {
-      if (currentTarget) {
-        observer.unobserve(currentTarget);
-      }
-    }
-  }, [loadMore]);
   // reset pagination when searching
   useEffect(() => {
     if (isInInitialMount.current) {
@@ -264,7 +226,7 @@ function Records() {
     } else {
       setCurrentPage(1);
       setHasMore(true);
-      handleLoadRecords(1, false);
+      handleLoadRecords(1);
     }
   }, [debouncedSearchTerm]);
 
@@ -342,10 +304,13 @@ function Records() {
                                 onClick={() => { setDataToUpdate(record); setIsEditRecord(true) }}>
                                 <FaEdit />
                               </button>
-                              <button className="cursor-pointer text-red-600 hover:text-red-700 p-2 
-                                hover:bg-red-50 rounded"
+                              <button
+                                type="button"
+                                className="cursor-pointer text-red-600 hover:text-red-700 p-2 hover:bg-red-50 rounded"
                                 onClick={() => { handleDeleteRecord(record) }}
-                                title="Delete Record">
+                                title="Delete Record"
+                                disabled={deletingId === record.id}
+                              >
                                 <FaTrash />
                               </button>
                             </div>
@@ -353,26 +318,6 @@ function Records() {
                         </tr>
                       ))}
 
-                      {/* loading more indicator */}
-                      {
-                        isLoadingMore && (
-                          <tr>
-                            <td colSpan={8} className='py-6'>
-                              <PlantLoading size='lg' variant='pulse' text="Loading more records..." />
-                            </td>
-                          </tr>
-                        )
-                      }
-                      {/* intersection observer target */}
-                      {
-                        !debouncedSearchTerm && hasMore && !isLoadingMore && (
-                          <tr ref={observerTarget}>
-                            <td colSpan={8} className='py-4 text-center text-gray-400 text-sm'>
-                              Scroll for more...
-                            </td>
-                          </tr>
-                        )
-                      }
 
                     </>
                   )
@@ -381,7 +326,33 @@ function Records() {
           </table>
         </div>
 
-        {debouncedSearchTerm && displayRecords.length === 0 && (
+        {!searchTerm && (
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between px-6 py-4 border-t border-gray-100 bg-gray-50">
+            <p className="text-sm text-gray-600">
+              Page {currentPage} of {lastPage}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={currentPage === 1 || isLoading}
+                onClick={() => handlePageChange(currentPage - 1)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={!hasMore || isLoading}
+                onClick={() => handlePageChange(currentPage + 1)}
+                className="rounded-lg border border-green-600 bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+
+        {searchTerm && filteredRecords.length === 0 && (
           <div className="text-center py-8 text-gray-500">
             No records found matching your search.
           </div>
