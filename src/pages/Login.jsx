@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { api } from "../api";
 
 function Login() {
@@ -42,19 +43,15 @@ function Login() {
         throw new Error("No token returned from server");
       }
 
-      // ✅ Save token (interceptor will use this automatically)
+      // Save token (interceptor will use this automatically)
       localStorage.setItem("token", token);
 
-      // ✅ Redirect
+      // Redirect
       navigate("/dashboard");
-
     } catch (error) {
       console.error("Login failed:", error);
-
-      alert(
-        error.message || "Invalid email or password"
-      );
-
+      const errorMessage = error.message || "Invalid email or password";
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -88,7 +85,36 @@ function Login() {
         </div>
 
         {/* Login Form Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-8 border border-green-100">
+        <div className="bg-white rounded-2xl shadow-xl p-8 border border-green-100 relative">
+          {isLoading && (
+            <div className="absolute inset-0 bg-white bg-opacity-75 rounded-2xl flex items-center justify-center z-10">
+              <div className="flex flex-col items-center gap-3">
+                <svg
+                  className="h-8 w-8 animate-spin text-green-600"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    strokeWidth="4"
+                    className="opacity-25"
+                  />
+                  <path
+                    d="M4 12a8 8 0 018-8"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    className="opacity-75"
+                  />
+                </svg>
+                <p className="text-sm text-gray-600 font-medium">
+                  Signing you in...
+                </p>
+              </div>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Field */}
             <div>
@@ -134,6 +160,25 @@ function Login() {
                                  outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="••••••••"
               />
+            </div>
+
+            {/* Remember Me Checkbox */}
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="rememberMe"
+                name="rememberMe"
+                checked={formData.rememberMe}
+                onChange={handleChange}
+                disabled={isLoading}
+                className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-2 focus:ring-green-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <label
+                htmlFor="rememberMe"
+                className="ml-2 text-sm text-gray-600 cursor-pointer disabled:opacity-50"
+              >
+                Remember me
+              </label>
             </div>
 
             {/* Submit Button */}
@@ -196,13 +241,14 @@ function Login() {
               }}
               disabled={isLoading}
               className={`font-semibold transition
-                ${isLoading
-                  ? "text-gray-400 cursor-not-allowed pointer-events-none"
-                  : "text-green-600 hover:text-green-700 cursor-pointer"
+                ${
+                  isLoading
+                    ? "text-gray-400 cursor-not-allowed pointer-events-none"
+                    : "text-green-600 hover:text-green-700 cursor-pointer"
                 }`}
->
-  Sign up for free
-</button>
+            >
+              Sign up for free
+            </button>
           </p>
         </div>
 
