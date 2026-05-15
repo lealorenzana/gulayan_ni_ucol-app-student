@@ -9,9 +9,9 @@ import { toast } from 'sonner';
 const PAGE_SIZE = 12;
 
 function Records() {
-  //TODO: add loading icon while ongoing ang loading ng records.
   const [records, setRecords] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [dataToUpdate, setDataToUpdate] = useState(null);
   const [isEditRecord, setIsEditRecord] = useState(false);
@@ -23,9 +23,86 @@ function Records() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const isInInitialMount = useRef(true);
+  const searchTimeoutRef = useRef(null);
 
-  const handleSearchPlants = async () => {
-    // TODO search from the the backend; in case that all records is not yet loaded
+  // Helper function for API calls with retry logic
+  const apiCallWithRetry = async (apiCall, maxRetries = 2) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await apiCall();
+      } catch (error) {
+        console.warn(`API call attempt ${attempt} failed:`, error.message);
+
+        if (attempt === maxRetries) {
+          throw error;
+        }
+
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      }
+    }
+  };
+
+  // Retry loading records
+  const retryLoadRecords = () => {
+    setLoadError(null);
+    handleLoadRecords(1, false);
+  };
+
+  // Debounce search term
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // 300ms delay
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchTerm]);
+
+  const handleSearchPlants = async (query = '') => {
+    try {
+      setIsLoading(true);
+      console.log(`Searching database for: "${query}"`);
+
+      const response = await apiCallWithRetry(() => api.get(`plants/search?q=${encodeURIComponent(query)}`));
+
+      // Handle different possible response structures
+      let searchResults = [];
+      if (response.data) {
+        if (response.data.data && Array.isArray(response.data.data)) {
+          searchResults = response.data.data;
+        } else if (Array.isArray(response.data)) {
+          searchResults = response.data;
+        } else if (response.data.records && Array.isArray(response.data.records)) {
+          searchResults = response.data.records;
+        } else {
+          console.warn('Unexpected search API response structure:', response.data);
+          searchResults = [];
+        }
+      }
+
+      console.log(`Found ${searchResults.length} records matching search query`);
+      setRecords(searchResults);
+      setHasMore(false); // Disable pagination during search
+
+      // Clear any previous errors on successful search
+      setLoadError(null);
+
+    } catch (error) {
+      console.error('Error searching records in database:', error);
+      toast.error('Failed to search records in database');
+      setRecords([]); // Clear records on search error
+      setHasMore(false);
+    } finally {
+      setIsLoading(false);
+    }
   }
   const handleLoadRecords = async (page = 1, append = false) => {
     try {
@@ -46,8 +123,19 @@ function Records() {
       setLastPage(pagination.last_page);
       setHasMore(pagination.current_page < pagination.last_page);
     } catch (error) {
-      console.error('Error loading records:', error);
-      toast.error('Failed to load records');
+      console.error('Error loading records from database:', error);
+      setLoadError('Failed to load records from database. Please check your connection and try again.');
+      toast.error('Failed to load records from database');
+
+      // Reset loading states on error
+      setIsLoading(false);
+      setIsLoadingMore(false);
+
+      // If this is the initial load and it fails, set empty records
+      if (!append) {
+        setRecords([]);
+        setHasMore(false);
+      }
     } finally {
       setIsLoading(false);
       setIsLoadingMore(false);
@@ -131,15 +219,16 @@ function Records() {
       isInInitialMount.current = false;
       return;
     }
-    if (searchTerm) {
+    if (debouncedSearchTerm) {
       setCurrentPage(1);
       setHasMore(false);
+      handleSearchPlants(debouncedSearchTerm);
     } else {
       setCurrentPage(1);
       setHasMore(true);
       handleLoadRecords(1);
     }
-  }, [searchTerm]);
+  }, [debouncedSearchTerm]);
 
   return (
     <div>
@@ -199,7 +288,7 @@ function Records() {
                     </tr>
                   ) : (
                     <>
-                      {filteredRecords.map((record) => (
+                      {displayRecords.map((record) => (
                         <tr key={record.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-4 px-6 text-sm text-gray-800 font-medium">{record.name}</td>
                           <td className="py-4 px-6 text-sm text-gray-600">{record?.variety || "-"}</td>
@@ -270,9 +359,22 @@ function Records() {
         )}
 
         {/* End of Records Indicator */}
-        {!hasMore && records.length > 0 && !searchTerm && (
+        {!hasMore && records.length > 0 && !debouncedSearchTerm && (
           <div className="text-center py-4 text-gray-400 text-sm border-t border-gray-100">
             No more records to load
+          </div>
+        )}
+
+        {/* Error Display */}
+        {loadError && records.length === 0 && !isLoading && (
+          <div className="text-center py-8 px-4">
+            <div className="text-red-600 mb-4">{loadError}</div>
+            <button
+              onClick={retryLoadRecords}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry Loading
+            </button>
           </div>
         )}
       </div>
